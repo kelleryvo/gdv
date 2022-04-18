@@ -1,0 +1,56 @@
+---
+title: "gdv - Fundamentals of data visualization"
+output: html_notebook
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# Introduction
+
+This report will cover my learnings with the fundamentals of data visualization, based on the data from the "Cross-Selling in Banking" challenge I completed last semester. I will take this opportunity to look at plots from the data visualization standpoint this time and improve on the results based on my new knowledge.
+
+# LO 1: Visualization basics, chart types
+
+In this first chapter, I will be looking at...
+
+- different types of visualizations
+- factors that play a role in deciding which visualization is a fit for what data 
+  - considerations of visual variables 
+  - perceptual theories
+  - empirical evidence 
+  - target group characteristics
+  
+## Density Plot
+When we want to better understand the characteristics of continous data, a *density plot* can be really helpful.
+This plot looks at the age distrubtion of the bank clients, by gender. It shows us the share of a given age (x-axis) and gender in the customer base.
+
+I purposely made some adjustments to the standard plot, to align with what the age stands for logically.
+
+- There are no customers younger than 10 years. However, every person was once younger, and I want to make clear for everybody looking at the plot that there are no customers under the age of 10. Therefore, the x-axis is fixed to start at 0.
+- The standard labels on x would only show the age at 4 positions, which makes it difficult to read. To fix that, I changed the scale to be shown in an interval of 10 years.
+
+```{r}
+ggplot(df_client_prep, aes(x = age, color = gender)) +
+  geom_density() +
+  labs(title = "Age Distribution of the Bank Clients", x = "Age (years)", y = "Density", color = "Gender") +
+  theme(legend.position = "bottom") +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  expand_limits(x = 0)
+```
+
+## Violin Plot
+
+Another way of showing distrubtions is a violin plot. That allows a better distinction of the distributions using a discrete value.
+Instead of lines on one plot, we can see the distrubtions side by side. I found this a really nice way of finding patterns in the data. Using comparisons, taking some time to look at it, differences stand out really well to the viewers eye.
+
+In this specific case, we can see the correlation between loan status and loan size nicely. The colors used are also a good match to the meaning behind the status. Red is bad, green is good, pink is bad so far, annd yellow-green stands for good so far.
+
+```{r plot-bank-products-2}
+ggplot(df_loan_prep, aes(x = status, y = amount, color = status)) +
+  geom_violin() +
+  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) + # find correct scale!!!
+  labs(title = "Loan amount distribution by payment status", subtitle = "over all bank clients with a loan", x = "Status", y = "Amount") +
+  theme(legend.position = "bottom") +
+  scale_color_manual(values=loan_status_colors)
+```
