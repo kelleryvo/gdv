@@ -1,6 +1,6 @@
 # gdv
 
-Repository for my data visualizations within the "Fundamentals of Data Visualization" module.
+Repository for my data visualizations within the "Fundamentals of Data Visualization" course.
 
 ## Setup
 
