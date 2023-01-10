@@ -1,0 +1,305 @@
+---
+title: "gdv-env-prep"
+output: html_document
+date: '2023-01-09'
+---
+
+```{r load-libraries}
+library(tidyverse)
+```
+
+
+```{r}
+getwd()
+```
+
+
+# Importing data
+```{r import-data}
+df_account <- read.table("xselling_banking_data/account.csv",
+                         header = TRUE,
+                         sep = ";")
+df_card <- read.table("xselling_banking_data/card.csv",
+                      header = TRUE,
+                      sep = ";")
+df_client <- read.table("xselling_banking_data/client.csv",
+                        header = TRUE,
+                        sep = ";")
+df_disp <- read.table("xselling_banking_data/disp.csv",
+                      header = TRUE,
+                      sep = ";")
+df_district <- read.table("xselling_banking_data/district.csv",
+                          header = TRUE,
+                          sep = ";")
+df_loan <- read.table("xselling_banking_data/loan.csv",
+                      header = TRUE,
+                      sep = ";")
+df_order <- read.table("xselling_banking_data/order.csv",
+                       header = TRUE,
+                       sep = ";", na.strings = c("", "NA"))
+df_trans <- read.table("xselling_banking_data/trans.csv",
+                       header = TRUE,
+                       sep = ";")
+df_car <- read.table("client_analytical_record.csv",
+                       header = TRUE,
+                       sep = ",")
+```
+
+# Data preprocessing
+Für das Data Preprocessing schauen wir uns in einem ersten Schritt alle Daten an, die uns die Bank zur Verfügung gestellt hat. Wir prüfen den Variablentyp und überlegen uns jeweils, wie diese Daten im Gesamtkontext des Cross-Sellings hilfreich werden könnten.
+
+Anschliessend importieren wir die Daten, wandeln Werte in ihren korrekten Variabel Typ um, benennen um für bessere Lesbarkeit und bereinigen wo notwendig.
+
+## Preprocessing df_client
+Der Datensatz df_client ist verbunden mit Disposition und wird dort unterschieden in Kontobesitzer und Kontobenutzer. Wir haben hier also auch reine Benutzer als Kunden. Ob Alter und Geschlecht ein Einfluss hat, werden wir anhand Plots genauer analysieren. Für die Junior Karte wird es möglicherweise ausschlaggebend sein.
+
+| Variable     | Data Type | Variable Quantity | Variable Type | Variable Scale | Relevance for Cross-Selling Analysis                                                                                         |
+| ------------ | --------- | ----------------- | ------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| client\_id   | int       | qualitative       | non-numerical | nominal        | Identifies client                                                                                                            |
+| district\_id\_client | int       | qualitative       | non-numerical | nominal        | Link to disctrict the client is registered in                                                                                |
+| gender       | Factor    | qualitative       | non-numerical | nominal        | Could influence a lot of factors, as equal rights were not that far progressed in 1990s Czech Republic, needs to be analyzed |
+| dob          | Date      | quantitative      | continous     | ratio          | Financial fortune usually rises with age                                                                                     |
+| age          | int       | quantitative      | discrete      | ratio          | Financial fortune usually rises with age                                                                                     |
+
+```{r prep-df_client}
+df_client_prep <- df_client
+
+# generate gender based on birth_number, female if +50 is added to MM of YYMMDD
+df_client_prep <- df_client_prep %>%
+  mutate(gender = as.factor(if_else(
+    substr(birth_number, 3, 4) > 50,
+    'female',
+    'male'
+  )))
+
+# generate correct DOB for male & female YYMMDD
+df_client_prep <- df_client_prep %>%
+  mutate(dob = if_else(
+    substr(birth_number, 3, 4) > 50,
+    paste0(
+      substr(birth_number, 1, 2), 
+      formatC(substr(birth_number, 3, 4) %>% as.integer %>% - 50, width = 2, format = "d", flag = "0"), 
+      substr(birth_number, 5, 6)),
+    birth_number %>% as.character()
+  )) %>%
+  mutate(dob = paste0("19", substr(dob, 1, 2), "-", substr(dob, 3, 4), "-", substr(dob, 5, 6))) %>%
+  mutate(dob = as.Date(dob, "%Y-%m-%d"))
+
+# generate age based on DOB, attention to year of data extraction: 1999
+df_client_prep <- df_client_prep %>% mutate(age = as.integer(99 - as.integer(substr(birth_number, 1, 2))))
+
+# remove unused columns & rename
+df_client_prep <- df_client_prep %>%
+  select(-c(birth_number)) %>%
+  rename(district_id_client = district_id)
+```
+
+## Preprocessing df_district
+Die Daten in df_district beschreiben unterschiedliche Eigenschaften für jedes tschechischen Bezirk in den 1990er Jahren.
+Viele Angaben darin sind vermutlich für dieses Projekt nicht sehr hilfreich. Wo Personen wohnen, sagt nicht zwingend etwas darüber aus, wo sie Arbeiten. Umzüge werden nicht beachtet.
+Wenn jemand nah der Grenze wohnt, hat er/sie evtl. mehr mit dem angrenzenden Bezirk zu tun, als mit dem eigenen.
+
+
+| Variable            | Data Type | Variable Quantity | Variable Type | Variable Scale | Relevance for Cross-Selling Analysis                                                                                           |
+| ------------------- | --------- | ----------------- | ------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| district\_id        | int       | qualitative       | non-numerical | nominal        | Identifies observation                                                                                                         |
+| district\_name      | Factor    | qualitative       | non-numerical | nominal        | Not relevant, is a name                                                                                                        |
+| population          | int       | quantitative      | continous     | ratio          | Population is only defined by the drawn border, and therefore is not likely to be relevant for a specific client               |
+| region              | chr       | qualitative       | non-numerical | nominal        | Not relevant, is a name                                                                                                        |
+| mun\_to\_499        | int       | quantitative      | continous     | ratio          | Villages until 499 citizens, possible correlation with income of clients, as that is generally higher in cities                |
+| mun\_500\_to\_1999  | int       | quantitative      | continous     | ratio          | Villages 500 until 1999 citizens, possible correlation with income of clients, as that is generally higher in cities           |
+| mun\_2000\_to\_9999 | int       | quantitative      | continous     | ratio          | Villages 2000 until 9999 citizens, possible correlation with income of clients, as that is generally higher in cities          |
+| mun\_from\_10000    | int       | quantitative      | continous     | ratio          | Villages from 10'000 citizens, possible correlation with income of clients, as that is generally higher in cities              |
+| no\_cities          | int       | quantitative      | continous     | ratio          | As districts have different sizes, this absoulte value is not relevant, urban\_ratio is relative and has a higher significance |
+| urban\_ratio        | num       | quantitative      | continous     | ratio          | Possible correlation with income of clients, as that is generally higher cities                                                |
+| avg\_salary         | int       | quantitative      | continous     | ratio          | Could indicate the general salary level of clients in that area, but as many people commute for work, it looses significance   |
+| unemploy\_rate95    | num       | quantitative      | continous     | ratio          | Could indicate higher risk of debt, but can't be generally applied to clients                                                  |
+| unemploy\_rate96    | num       | quantitative      | continous     | raito          | Could indicate higher risk of debt, but can't be generally applied to clients                                                  |
+| enterpren\_rate     | int       | quantitative      | continous     | ratio          | Could indicate more self-employed people, but can't be generally applied to clients                                            |
+| crimes\_95          | int       | quantitative      | continous     | ratio          | Could indicate poverty of a region, as violence rises with poverty, but can't be generally applied to clients                 |
+| crimes\_96          | int       | quantitative      | continous     | ratio          | Could indicate poverty of a region, as violence rises with poverty, but can't be generally applied to clients                 |
+
+```{r prep-df_district}
+df_district_prep <- df_district
+
+# renaming the columns of district for a better overview
+df_district_prep <- df_district %>%
+  transmute(
+    district_id = A1,
+    district_name = as.factor(A2),
+    region = as.factor(A3),
+    population = A4,
+    mun_to_499 = A5,
+    mun_500_to_1999 = A6,
+    mun_2000_to_9999 = A7,
+    mun_from_10000 = A8,
+    no_cities = A9,
+    urban_ratio = A10,
+    avg_salary = A11,
+    unemploy_rate95 = as.numeric(A12),
+    unemploy_rate96 = as.numeric(A13),
+    enterpren_rate = A14,
+    crimes_95 = as.integer(A15),
+    crimes_96 = as.integer(A16)
+  )
+```
+
+## Preprocessing df_loan
+Hier wird aufgezeigt, welcher "account" was für einen Loan bei der Bank hat. Pro Account kann es nur einen Loan geben. Loans sind für Cross-Selling sicherlich relevant, es ist ein Produkt welches verkauft werden kann, jedoch auch risikobehaftet ist.
+
+Es macht also Sinn, die bestehenden Loans zu analysieren und zu versuchen, die Voraussetzungen für gute oder schlechte Verläufe zu finden.
+
+| Variable      | Data Type | Variable Quantity | Variable Type | Variable Scale | Relevance for Cross-Selling Analysis                                                       |
+| ------------- | --------- | ----------------- | ------------- | -------------- | ------------------------------------------------------------------------------------------ |
+| loan\_id      | int       | Qualitative       | non-numerical | nominal        | Identifies observation                                                                     |
+| account\_id   | int       | Qualitative       | non-numerical | nominal        | Identifies related observation                                                             |
+| date          | date      | Quantitative      | continuous    | ratio          | Date when loan was given (to determine the situation when the loan is given)               |
+| amount        | int       | Quantitative      | continuous    | ratio          | Amount of the loan, kind of relevant (what amounts were given to what clients)             |
+| duration      | int       | Quantitative      | continuous    | ratio          | Amount of months indicating the duration of the loan                                       |
+| monthly\_rate | int       | Quantitative      | continuous    | ratio          | Relevant if wanted in detail - can check what amounts are applicable to what situations    |
+| status        | chr       | Qualitative       | non-numerical | nominal        | Relevant: current status of loan - can be used to check, what situations lead to bad stati |
+
+```{r prep-df_loan}
+df_loan_prep <- df_loan
+
+# renaming the values
+df_loan_prep <- df_loan_prep %>% 
+    mutate(status = replace(status, status == "A", "finished_ok")) %>% 
+    mutate(status = replace(status, status == "B", "finished_nok")) %>% 
+    mutate(status = replace(status, status == "C", "running_ok")) %>% 
+    mutate(status = replace(status, status == "D", "running_nok")) %>% 
+    mutate(date = paste0(substr(as.character(date), 1, 2), "-", substr(as.character(date), 3, 4), "-", substr(as.character(date), 5, 6))) %>%
+    mutate(date = as.Date(date, "%y-%m-%d"), monthly_rate = as.integer(payments))
+```
+
+## Preprocessing df_trans
+Die Transaktionstabelle ist extrem wichtig für das Projekt, jedoch müssen nicht alle Attribute gleich gewichtet werden. Wir können damit die Entwicklung des Vermögens jedes Kunden herleiten.
+
+| Variable    | Data Type | Variable Quantity | Variable Type | Variable Scale | Relevance for Cross-Selling Analysis                                                                                  |
+| ----------- | --------- | ----------------- | ------------- | -------------- | --------------------------------------------------------------------------------------------------------------------- |
+| trans\_id   | int       | Qualitative       | non-numerical | nominal        | Identifies observation                                                                                                |
+| account\_id | int       | Qualitative       | non-numerical | nominal        | Identifies related observation                                                                                        |
+| date        | date      | Quantitative      | continuous    | ratio          | Date when transaction took place                                                                                      |
+| type        | chr       | Qualitative       | non-numerical | nominal        | Credit/withdrawal , very relevant                                                                                     |
+| operation   | chr       | Qualitative       | non-numerical | nominal        | Not always given, gives a hint in individual observations but can not be used in general analytics                    |
+| amount      | int       | Quantitative      | continuous    | ratio          | Amount of the transaction                                                                                             |
+| balance     | int       | Quantitative      | continuous    | ratio          | Balance after the transaction                                                                                         |
+| k\_symbol   | chr       | Qualitative       | non-numerical | nominal        | A sort of comment, also gives a hint in individual observations but cannot be used because of too many missing values |
+| bank        | chr       | Qualitative       | non-numerical | nominal        | Information of the other bank (sending or recieving) irrelevant for this project                                      |
+| account     | int       | Qualitative       | non-numerical | nominal        | Information of the other bank (sending or recieving) irrelevant for this project                                      |
+
+```{r prep-df_trans}
+df_trans_prep <- df_trans
+
+# renaming the values
+df_trans_prep <- df_trans_prep %>% 
+    mutate(type = replace(type, type == "PRIJEM", "credit")) %>% 
+    mutate(type = replace(type, type == "VYDAJ", "withdrawal")) %>% 
+    mutate(operation = replace(operation, operation == "VYBER KARTOU", "credit_card_withdrawal")) %>% 
+    mutate(operation = replace(operation, operation == "VKLAD", "credit_cash")) %>% 
+    mutate(operation = replace(operation, operation == "PREVOD Z UCTU", "collection_other_bank")) %>% 
+    mutate(operation = replace(operation, operation == "VYBER", "cash_withdrawal")) %>% 
+    mutate(operation = replace(operation, operation == "PREVOD NA UCET", "remittance_other_bank")) %>% 
+    mutate(k_symbol = replace(k_symbol, k_symbol == "POJISTNE", "insurance_payment")) %>% 
+    mutate(k_symbol = replace(k_symbol, k_symbol == "SLUZBY", "statement_payment")) %>% 
+    mutate(k_symbol = replace(k_symbol, k_symbol == "UROK", "interest_credited")) %>% 
+    mutate(k_symbol = replace(k_symbol, k_symbol == "SANKC. UROK", "sanctioned_interest_neg_balance")) %>% 
+    mutate(k_symbol = replace(k_symbol, k_symbol == "SIPO", "household")) %>% 
+    mutate(k_symbol = replace(k_symbol, k_symbol == "DUCHOD", "old_age_pension")) %>% 
+    mutate(k_symbol = replace(k_symbol, k_symbol == "UVER", "loan_payment")) %>% 
+    mutate(date = paste0(substr(as.character(date), 1, 2), "-", substr(as.character(date), 3, 4), "-", substr(as.character(date), 5, 6))) %>%
+    mutate(date = as.Date(date, "%y-%m-%d"))
+
+df_trans_prep <- df_trans_prep %>% mutate(amount = as.integer(amount), balance = as.integer(balance))
+```
+
+## Preprocessing df_account
+Diese Tabelle ist nicht reich an wertvollen Attributen, aber wird für die Verknüpfung von Tabellen benötigt.
+
+| Variable     | Data Type | Variable Quantity | Variable Type | Variable Scale | Relevance for Cross-Selling Analysis                                                                     |
+| ------------ | --------- | ----------------- | ------------- | -------------- | -------------------------------------------------------------------------------------------------------- |
+| account\_id  | int       | qualitative       | non-numerical | nominal        | Identifies account                                                                                       |
+| district\_id\_branch | int       | qualitative       | non-numerical | nominal        | Link to disctrict the account is registered in                                                           |
+| frequency    | Factor    | qualitative       | non-numerical | nominal        | Bank statement frequency, highly unlikely to be relevant                                                 |
+| date         | Date      | quantitative      | continous     | ratio          | Account opening date, could be a loyality indicator, but as we only have a few years of data, rather not |
+
+```{r prep-df_account}
+df_account_prep <- df_account
+# translating to English for better understanding
+df_account_prep <- df_account_prep %>%
+  mutate(frequency = replace(frequency, frequency == "POPLATEK MESICNE", "monthly_issuance")) %>%
+  mutate(frequency = replace(frequency, frequency == "POPLATEK TYDNE", "weekly_issuance")) %>%
+  mutate(frequency = replace(frequency, frequency == "POPLATEK PO OBRATU", "issuance_after_transaction")) %>%
+  mutate(frequency = as.factor(frequency)) %>%
+  mutate(date = paste0(substr(as.character(date), 1, 2), "-", substr(as.character(date), 3, 4), "-", substr(as.character(date), 5, 6))) %>%
+  mutate(date = as.Date(date, "%y-%m-%d")) %>%
+  rename(district_id_branch = district_id)
+```
+
+## Preprocessing df_order
+Daueraufträge sehen wir als uninteressant für das Cross-Selling. Es ist nicht ganz klar, ob sie als Produkt gewertet werden können. Eventuell werden bei gewissen Konten auch regelmässige Zahlungen gemacht ohne Dauerauftrag, und wenn es dabei nicht um Transkationen ins Ausland geht, kann auch kein Geld mit Gebühren verdient werden.
+
+| Variable          | Data Type | Variable Quantity | Variable Type | Variable Scale | Relevance for Cross-Selling Analysis                                           |
+| ----------------- | --------- | ----------------- | ------------- | -------------- | ------------------------------------------------------------------------------ |
+| order\_id         | int       | Qualitative       | non-numerical | nominal        | Identifies observation                                                         |
+| account\_id       | int       | Qualitative       | non-numerical | nominal        | Identifies related observation                                                 |
+| bank\_to          | chr       | Qualitative       | non-numerical | nominal        | Identifies recieving bank, irrelevant                                          |
+| account\_to       | int       | Qualitative       | non-numerical | nominal        | Identifies reciecing account, irrelevant                                       |
+| amount            | int       | Quantitative      | continuous    | ratio          | Amount of monthly transaction, relevant                                        |
+| payment\_category | chr       | Qualitative       | non-numerical | nominal        | payment\_category, not always given, not nessecarily relevant for this project |
+
+```{r prep-df_order}
+df_order_prep <- df_order
+
+# translating to English for better understanding
+df_order_prep <- df_order_prep %>%
+  rename(payment_category = k_symbol) %>%
+  mutate(
+    payment_category = recode(
+      payment_category,
+      "SIPO" = "household",
+      "UVER" = "loan",
+      "LEASING" = "leasing",
+      "POJISTNE" = "insurance",
+      " " = "missing"
+    ), amount = as.integer(amount)
+  )
+```
+
+## Preprocessing df_card
+Wie der Loan, sind auch die Kreditkarten ein Produkt mit viel Bedeutung für Cross-Selling, und stellen in diesem Projekt für und das Fokusprodukt dar.
+
+Hier wollen wir vor und nach der Herausgabe der Kreditkarte die Vermögensentwicklung analysieren, und aufgrund diesen Informationen versuchen, low-risk Ausgangslagen zu finden.
+
+| Variable | Data Type | Variable Quantity | Variable Type | Variable Scale | Relevance for Cross-Selling Analysis |
+| -------- | --------- | ----------------- | ------------- | -------------- | ------------------------------------ |
+| card\_id | int       | Qualitative       | non-numerical | nominal        | Identifies observation               |
+| disp\_id | int       | Qualitative       | non-numerical | nominal        | Identifies related observation       |
+| type     | chr       | Qualitative       | non-numerical | ordinal        | Type of card, very relevant          |
+| issued   | date      | Quantitative      | continuous    | ratio          | Date of issuance, very relevant      |
+
+```{r prep-df_card}
+df_card_prep <- df_card
+df_card_prep <- df_card_prep %>%
+  mutate(issued = paste0("19", substr(issued, 1, 2), "-", substr(issued, 3, 4), "-", substr(issued, 5, 6))) %>%
+  mutate(issued = as.Date(issued, "%Y-%m-%d"))
+```
+
+## Preprocessing df_disp
+Disponent ist eine Zwischentabelle, welche es uns erlaubt, nach den Ownern zu filtern. Wir gehen davon aus, dass Disponenten uninteressant sind für uns.
+Wir können nicht feststellen, welche Transaktionen vom Owner und welche von Disponents getätigt werden, und legen uns deshalb auf den Owner fest.
+Auch ist ein Disponent nur eine zusätzlich Person mit Zugriff auf ein Konto mit Owner dahinter, und die Wirtschaftlichkeit dessen ist es, was der Bank schlussendlich Profit ermöglicht.
+
+| Variable    | Data Type | Variable Quantity | Variable Type | Variable Scale | Relevance for Cross-Selling Analysis                                                 |
+| ----------- | --------- | ----------------- | ------------- | -------------- | ------------------------------------------------------------------------------------ |
+| disp\_id    | int       | qualitative       | non-numerical | nominal        | Identifies disponent                                                                 |
+| client\_id  | int       | qualitative       | non-numerical | nominal        | Identifies client                                                                    |
+| account\_id | int       | qualitative       | non-numerical | nominal        | Identifies account                                                                   |
+| type        | Factor    | qualitative       | non-numerical | ordinal        | Type of relation, e.g. account owner or disponent, will be relevant to differentiate |
+
+```{r prep-df_disp}
+df_disp_prep <- df_disp
+df_disp_prep <- df_disp_prep %>%
+  mutate(type = as.factor(recode(type, "OWNER" = "owner", "DISPONENT" = "disponent")))
+```
+

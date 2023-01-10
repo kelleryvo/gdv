@@ -1,34 +1,56 @@
 ---
 title: "gdv - Fundamentals of data visualization"
-output: html_notebook
-editor_options: 
-  markdown: 
-    wrap: 72
+author: Yvo Keller
+output:
+  word_document: default
+  html_notebook: default
+  pdf_document: default
+editor_options:
+  markdown:
+    wrap: 120
+bibliography: references.bib
 ---
 
 # Introduction
 
-This report will cover my learnings with the fundamentals of data visualization, based on the data from the "Cross-Selling in Banking" challenge I completed last semester. I will take this opportunity to look at plots from the data visualization standpoint this time and improve on the results based on my new knowledge.
+This report will cover my learning's as part of the fundamentals of data visualization, based on the data from the
+"Cross-Selling in Banking" challenge I completed two semester back. I will take this opportunity to look at plotting
+from the data visualization standpoint this time and improve on the results based on my newly obtained knowledge.
+
+```{r load-libraries}
+load("gdv.RData")
+library(tidyverse)
+library(lubridate)
+library(scales)
+library(sf)
+library(RCzechia)
+library(ggsn)
+```
 
 # LO 1: Visualization basics, chart types
 
 In this first chapter, I will be looking at...
 
-- different types of visualizations
-- factors that play a role in deciding which visualization is a fit for what data 
-  - considerations of visual variables 
-  - perceptual theories
-  - empirical evidence 
-  - target group characteristics
-  
+-   different types of visualizations
+-   factors that play a role in deciding which visualization is a fit for what data
+    -   considerations of visual variables
+    -   perceptual theories
+    -   empirical evidence
+    -   target group characteristics
+
 ## Density Plot
-When we want to better understand the characteristics of continous data, a *density plot* can be really helpful.
-This plot looks at the age distrubtion of the bank clients, by gender. It shows us the share of a given age (x-axis) and gender in the customer base.
+
+When we want to better understand the characteristics of continuous data, a *density plot* can be really helpful. This
+plot looks at the age distribution of the bank clients, by gender. It shows us the share of a given age (x-axis) and
+gender in the customer base.
 
 I purposely made some adjustments to the standard plot, to align with what the age stands for logically.
 
-- There are no customers younger than 10 years. However, every person was once younger, and I want to make clear for everybody looking at the plot that there are no customers under the age of 10. Therefore, the x-axis is fixed to start at 0.
-- The standard labels on x would only show the age at 4 positions, which makes it difficult to read. To fix that, I changed the scale to be shown in an interval of 10 years.
+-   There are no customers younger than 10 years. However, every person was once younger, and I want to make clear for
+    everybody looking at the plot that there are no customers under the age of 10. Therefore, the x-axis is fixed to
+    start at 0.
+-   The standard labels on x would only show the age at 4 positions, which makes it difficult to read. To fix that, I
+    changed the scale to be shown in an interval of 10 years.
 
 ```{r}
 ggplot(df_client_prep, aes(x = age, color = gender)) +
@@ -41,16 +63,225 @@ ggplot(df_client_prep, aes(x = age, color = gender)) +
 
 ## Violin Plot
 
-Another way of showing distrubtions is a violin plot. That allows a better distinction of the distributions using a discrete value.
-Instead of lines on one plot, we can see the distrubtions side by side. I found this a really nice way of finding patterns in the data. Using comparisons, taking some time to look at it, differences stand out really well to the viewers eye.
+Another way of showing distributions is a violin plot. That allows a better distinction of the distributions using a
+discrete value. Instead of lines on one plot, we can see the distributions side by side. I found this a really nice way
+of finding patterns in the data. Using comparisons, taking some time to look at it, differences stand out really well to
+the viewers eye.
 
-In this specific case, we can see the correlation between loan status and loan size nicely. The colors used are also a good match to the meaning behind the status. Red is bad, green is good, pink is bad so far, annd yellow-green stands for good so far.
+In this specific case, we can see the correlation between loan status and loan size nicely. The colors used are also a
+good match to the meaning behind the status. Red is bad, green is good, pink is bad so far, and yellow-green stands for
+good so far.
 
-```{r plot-bank-products-2}
+```{r}
 ggplot(df_loan_prep, aes(x = status, y = amount, color = status)) +
   geom_violin() +
-  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) + # find correct scale!!!
+  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_x_discrete(labels = c("NOK (Finished)", "OK (Finished)", "NOK (Running)", "OK (Running)")) +
   labs(title = "Loan amount distribution by payment status", subtitle = "over all bank clients with a loan", x = "Status", y = "Amount") +
   theme(legend.position = "bottom") +
   scale_color_manual(values=loan_status_colors)
 ```
+
+## Scatter Plot
+
+```{r}
+ggplot(df_car, aes(x = client.age, y = eng.balance_at_card_issuance)) +
+  geom_point(alpha = 0.3) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  labs(title = "Account balance by client age", subtitle = "at credit card issuance", x = "Age", y = "Account Balance")
+  
+```
+
+# LO2
+
+## Bubble Chart
+
+```{r}
+df_car_sample <- slice_sample(df_car, prop = 0.01)
+
+ggplot(df_car_sample, aes(x = client.age, y = eng.balance_at_card_issuance)) +
+  geom_point(aes(color = client.gender, size = eng.mean_trans_count_per_month), alpha = 0.3) +
+  scale_x_continuous(breaks = scales::pretty_breaks(n = 10)) +
+  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  theme(legend.position = "bottom") +
+  labs(title = "Account balance by client age", subtitle = "at credit card issuance", x = "Age", y = "Account Balance")
+```
+
+```{r}
+df_temp <- df_client_prep %>%
+  inner_join(df_district_prep, by = c("district_id_client" = "district_id")) %>%
+  count(region, gender)
+df_temp
+```
+
+```{r}
+df_temp <- df_client_prep %>%
+  inner_join(df_district_prep, by = c("district_id_client" = "district_id"))
+
+ggplot(df_temp, aes(x = region, fill = gender)) +
+  geom_bar(position="dodge") +
+  scale_fill_manual(values=c("#EF736B", "#6E98ED")) +
+  labs(title = "Gender of Bank Clients per Region in Czech Republic", x = "Region", y = "# Clients", fill = "Gender") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "right")
+
+rm(df_temp)
+```
+
+## Map
+
+```{r}
+borders <- RCzechia::republika("low")
+counties <- RCzechia::okresy("low") %>% 
+  rename(district_name = NAZ_LAU1) %>%
+  arrange(district_name)
+
+district_data <- df_district_prep %>% 
+  mutate(
+    district_name = recode(district_name, "Hl.m. Praha"="Praha"),
+    district_name = as.character(district_name)
+  ) %>%
+  arrange(district_name)
+
+district_data$district_name = counties$district_name
+
+counties_with_data <- counties %>%
+  inner_join(district_data, by="district_name")
+```
+
+```{r}
+# report results
+ggplot() +
+  geom_sf(data=borders, color="gray25") +
+  geom_sf(data=counties_with_data, color="gray30", aes(fill = avg_salary)) +
+  north(data=counties_with_data, scale=0.15, location = "topright") +
+  scale_fill_viridis_c(option = "plasma", trans = "log", labels = scales::comma) +
+  labs(title = "Average monthly salary per district in Czech Republic", fill = "Avg. Salary\n(in Kč)") +
+  theme_bw()
+```
+
+# LO3
+
+```{r}
+df_temp <- df_order_prep %>%
+  rename(disp.account_id = account_id) %>%
+  inner_join(df_car, by="disp.account_id") %>%
+  group_by(card.type, payment_category) %>%
+  count(payment_category) %>%
+  replace_na(list(card.type = "no card", y = "missing"))
+
+df_temp
+```
+
+```{r}
+cb_palette <- c("#999999", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
+
+df_temp <- df_order_prep %>%
+  rename(disp.account_id = account_id) %>%
+  inner_join(df_car, by="disp.account_id") %>%
+  group_by(card.type, payment_category) %>%
+  count(payment_category) %>%
+  replace_na(list(card.type = "no card", y = "missing"))
+
+ggplot(df_temp, aes(x = payment_category, y = n, fill = card.type)) +
+  geom_col() +
+  scale_fill_manual(values=cb_palette) +
+  labs(title = "Payments executed by Client Card Level", x = "Payment Type", y = "# Payments", fill = "Card Level") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "right")
+
+rm(df_temp)
+```
+
+```{r}
+ggplot(df_car, aes(x=loan.amount, color = client.gender)) + 
+  geom_histogram(binwidth=25000, boundary=0, alpha=0.5, fill="white") +
+  scale_x_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  labs(title = "Number of Loans by Size and Gender", x = "Loan Amount", y = "# Loans", fill = "Gender") +
+  theme(legend.position = "bottom")
+```
+
+# LO4
+
+## Balance Development
+
+```{r}
+df_temp <- df_trans_prep %>% 
+  filter(account_id == 3592)
+
+df_temp$year = year(df_temp$date)
+
+ggplot(df_temp, aes(x = date, y = balance)) +
+  geom_line() +
+  stat_smooth(method='lm')
+```
+
+## Relation between average income and loan size
+
+### Data Prep
+
+```{r}
+df_temp <- df_car %>%
+  select(loan.amount, credit_check_avg_income, client.gender, loan.status, card.has_card) %>%
+  drop_na() %>%
+  filter(loan.status == "finished_ok" | loan.status == "running_ok") %>%
+  mutate(card.info = case_when(
+    card.has_card == TRUE ~ "Credit Card",
+    card.has_card == FALSE ~ "No Credit Card"
+  )) %>%
+  mutate(loan.status = recode(loan.status, "running_ok" = "Loan Running OK", "finished_ok" = "Loan Finished OK"))
+df_temp
+```
+
+### Aesthetics
+
+```{r}
+ggplot(df_temp, aes(x=loan.amount, y=credit_check_avg_income, color = client.gender)) +
+  geom_point() +
+  scale_x_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_colour_manual(values=c("#EF736B", "#6E98ED")) +
+  labs(title = "Relation between Average Income and Loan Size", x = "Loan Size", y = "Average Income", color = "Gender") + 
+  theme(legend.position = "bottom")
+```
+
+### Statistical measure
+
+```{r}
+ggplot(df_temp, aes(x=loan.amount, y=credit_check_avg_income, color = client.gender)) +
+  geom_point() +
+  scale_x_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_colour_manual(values=c("#EF736B", "#6E98ED")) +
+  labs(title = "Relation between Average Income and Loan Size", x = "Loan Size", y = "Average Income", color = "Gender") + 
+  theme(legend.position = "bottom") +
+  stat_smooth(method='lm')
+```
+
+### Facet
+
+```{r}
+ggplot(df_temp, aes(x=loan.amount, y=credit_check_avg_income, color = client.gender)) +
+  geom_point() +
+  scale_x_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_colour_manual(values=c("#EF736B", "#6E98ED")) +
+  stat_smooth(method='lm') +
+  labs(title = "Relation between Average Income and Loan Size", x = "Loan Size", y = "Average Income", color = "Gender") + 
+  facet_grid(vars(card.info), vars(loan.status)) +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1), legend.position = "bottom")
+```
+
+# LO5
+
+```{r}
+ggplot(df_temp, aes(x=loan.amount, y=credit_check_avg_income, color = client.gender)) +
+  geom_point() +
+  scale_x_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_y_continuous(labels = label_number(suffix = " Kč", scale = 1e+0)) +
+  scale_colour_manual(values=c("#EF736B", "#6E98ED")) +
+  labs(title = "Relation between Average Income and Loan Size", subtitle = "with smoothed mean and uncertainty strip", x = "Loan Size", y = "Average Income", color = "Gender") + 
+  theme(legend.position = "bottom") +
+  stat_smooth(method='lm')
+```
+
+## 
